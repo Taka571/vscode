@@ -9,10 +9,10 @@ console.log('fileStorage', fileStorage);
 export class MemFS implements vscode.FileSystemProvider, vscode.FileSearchProvider, vscode.TextSearchProvider {
 	root = new Directory(vscode.Uri.parse('memfs:/'), '');
 	// --- manage file metadata
-	stat(uri: vscode.Uri): vscode.FileStat {
+	async stat(uri: vscode.Uri): Promise<vscode.FileStat> {
 		return this._lookup(uri, false);
 	}
-	readDirectory(uri: vscode.Uri): [string, vscode.FileType][] {
+	async readDirectory(uri: vscode.Uri): Promise<[string, vscode.FileType][]> {
 		const entry = this._lookupAsDirectory(uri, false);
 		let result: [string, vscode.FileType][] = [];
 		for (const [name, child] of entry.entries) {
@@ -21,17 +21,17 @@ export class MemFS implements vscode.FileSystemProvider, vscode.FileSearchProvid
 		return result;
 	}
 	// --- manage file contents
-	readFile(uri: vscode.Uri): Uint8Array {
+	async readFile(uri: vscode.Uri): Promise<Uint8Array> {
 		const data = this._lookupAsFile(uri, false).data;
 		if (data) {
 			return data;
 		}
 		throw vscode.FileSystemError.FileNotFound();
 	}
-	writeFile(uri: vscode.Uri, content: Uint8Array, options: {
+	async writeFile(uri: vscode.Uri, content: Uint8Array, options: {
 		create: boolean;
 		overwrite: boolean;
-	}): void {
+	}): Promise<void> {
 		let basename = this._basename(uri.path);
 		let parent = this._lookupParentDirectory(uri);
 		let entry = parent.entries.get(basename);
@@ -55,9 +55,9 @@ export class MemFS implements vscode.FileSystemProvider, vscode.FileSearchProvid
 		this._fireSoon({ type: vscode.FileChangeType.Changed, uri });
 	}
 	// --- manage files/folders
-	rename(oldUri: vscode.Uri, newUri: vscode.Uri, options: {
+	async rename(oldUri: vscode.Uri, newUri: vscode.Uri, options: {
 		overwrite: boolean;
-	}): void {
+	}): Promise<void> {
 		if (!options.overwrite && this._lookup(newUri, true)) {
 			throw vscode.FileSystemError.FileExists(newUri);
 		}
@@ -70,7 +70,7 @@ export class MemFS implements vscode.FileSystemProvider, vscode.FileSearchProvid
 		newParent.entries.set(newName, entry);
 		this._fireSoon({ type: vscode.FileChangeType.Deleted, uri: oldUri }, { type: vscode.FileChangeType.Created, uri: newUri });
 	}
-	delete(uri: vscode.Uri): void {
+	async delete(uri: vscode.Uri): Promise<void> {
 		let dirname = uri.with({ path: this._dirname(uri.path) });
 		let basename = this._basename(uri.path);
 		let parent = this._lookupAsDirectory(dirname, false);
@@ -82,7 +82,7 @@ export class MemFS implements vscode.FileSystemProvider, vscode.FileSearchProvid
 		parent.size -= 1;
 		this._fireSoon({ type: vscode.FileChangeType.Changed, uri: dirname }, { uri, type: vscode.FileChangeType.Deleted });
 	}
-	createDirectory(uri: vscode.Uri): void {
+	async createDirectory(uri: vscode.Uri): Promise<void> {
 		let basename = this._basename(uri.path);
 		let dirname = uri.with({ path: this._dirname(uri.path) });
 		let parent = this._lookupAsDirectory(dirname, false);
@@ -227,13 +227,13 @@ export class MemFS implements vscode.FileSystemProvider, vscode.FileSearchProvid
 	}
 	private _textDecoder = new TextDecoder();
 	// @ts-ignore
-	provideTextSearchResults(query: vscode.TextSearchQuery, options: vscode.TextSearchOptions, progress: vscode.Progress<vscode.TextSearchResult>, _token: vscode.CancellationToken) {
+	async provideTextSearchResults(query: vscode.TextSearchQuery, options: vscode.TextSearchOptions, progress: vscode.Progress<vscode.TextSearchResult>, _token: vscode.CancellationToken) {
 		// @ts-ignore
 		const result: vscode.TextSearchComplete = { limitHit: false };
 		const files = this._findFiles(options.includes[0]);
 		if (files) {
 			for (const file of files) {
-				const content = this._textDecoder.decode(this.readFile(file));
+				const content = this._textDecoder.decode(await this.readFile(file));
 				const lines = content.split('\n');
 				for (let i = 0; i < lines.length; i++) {
 					const line = lines[i];
