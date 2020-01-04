@@ -7,6 +7,27 @@ import { StorageArea } from 'kv-storage-polyfill';
 export class MemFS implements vscode.FileSystemProvider, vscode.FileSearchProvider, vscode.TextSearchProvider {
 	root = new Directory(vscode.Uri.parse('memfs:/'), '');
 	fileStorage = new FileStorage();
+	async restore() {
+		// TODO: Sort by filepath
+		for await (const [_key, entry] of this.fileStorage.fileStorage.entries()) {
+			try {
+				const _entry = entry as SerializedEntry;
+				if (_entry.type === vscode.FileType.File) {
+					const restored = File.fromJSON(_entry);
+					await this.writeFile(restored.uri, restored.data || new Uint8Array(0), {
+						create: true,
+						overwrite: false
+					});
+				} else {
+					const restored = Directory.fromJSON(_entry);
+					await this.createDirectory(restored.uri);
+				}
+			} catch(err) {
+				console.log(err);
+			}
+		}
+	}
+
 	// --- manage file metadata
 	async stat(uri: vscode.Uri): Promise<vscode.FileStat> {
 		return await this._lookup(uri, false);
@@ -378,10 +399,11 @@ export interface SerializedDirectory extends vscode.FileStat {
 export type SerializedEntry = SerializedDirectory | SerializedFile;
 
 class FileStorage {
-	private fileStorage = new StorageArea('fs') as {
+	fileStorage = new StorageArea('fs') as {
 		get(key: string): Promise<SerializedEntry>;
 		set(key:string, serialized: SerializedEntry): Promise<void>;
 		delete(key: string): Promise<void>;
+		entries(): any;
 	};
 
 	async read(uri: vscode.Uri): Promise<Entry> {
@@ -394,11 +416,15 @@ class FileStorage {
 	}
 
 	async write(entry: Entry) {
-		console.log('write', entry.uri.toString(), entry.toJSON());
+		// console.log('write', entry.uri.toString(), entry.toJSON());
 		await this.fileStorage.set(entry.uri.toString(), entry.toJSON());
 	}
 
 	async delete(uri: vscode.Uri) {
 		await this.fileStorage.delete(uri.toString());
+	}
+
+	entries() {
+		return this.fileStorage.entries();
 	}
 }
