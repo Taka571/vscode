@@ -32,12 +32,14 @@ export async function activate(context: vscode.ExtensionContext) {
 }
 
 async function enableFs(context: vscode.ExtensionContext): Promise<MemFS> {
-	console.log("enable")
+	console.log('enable');
 	const memFs = new MemFS();
 	context.subscriptions.push(vscode.workspace.registerFileSystemProvider(SCHEME, memFs, { isCaseSensitive: true }));
 
 	await memFs.createDirectory(vscode.Uri.parse(`memfs:/sample-folder/`));
 	await memFs.writeFile(vscode.Uri.parse(`memfs:/sample-folder/file.txt`), textEncoder.encode('foo'), { create: true, overwrite: true });
+	await memFs.writeFile(vscode.Uri.parse(`memfs:/sample-folder/foo.txt`), textEncoder.encode('txt'), { create: true, overwrite: true });
+
 	return memFs;
 }
 

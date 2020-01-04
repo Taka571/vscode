@@ -2,18 +2,17 @@ import * as vscode from 'vscode';
 
 // @ts-ignore
 import { StorageArea } from 'kv-storage-polyfill';
-const fileStorage = new StorageArea('fs');
-console.log('fileStorage', fileStorage);
 
 // @ts-ignore
 export class MemFS implements vscode.FileSystemProvider, vscode.FileSearchProvider, vscode.TextSearchProvider {
 	root = new Directory(vscode.Uri.parse('memfs:/'), '');
+	fileStorage = new FileStorage();
 	// --- manage file metadata
 	async stat(uri: vscode.Uri): Promise<vscode.FileStat> {
-		return this._lookup(uri, false);
+		return await this._lookup(uri, false);
 	}
 	async readDirectory(uri: vscode.Uri): Promise<[string, vscode.FileType][]> {
-		const entry = this._lookupAsDirectory(uri, false);
+		const entry = await this._lookupAsDirectory(uri, false);
 		let result: [string, vscode.FileType][] = [];
 		for (const [name, child] of entry.entries) {
 			result.push([name, child.type]);
@@ -22,7 +21,7 @@ export class MemFS implements vscode.FileSystemProvider, vscode.FileSearchProvid
 	}
 	// --- manage file contents
 	async readFile(uri: vscode.Uri): Promise<Uint8Array> {
-		const data = this._lookupAsFile(uri, false).data;
+		const data = (await this._lookupAsFile(uri, false)).data;
 		if (data) {
 			return data;
 		}
@@ -33,7 +32,7 @@ export class MemFS implements vscode.FileSystemProvider, vscode.FileSearchProvid
 		overwrite: boolean;
 	}): Promise<void> {
 		let basename = this._basename(uri.path);
-		let parent = this._lookupParentDirectory(uri);
+		let parent = await this._lookupParentDirectory(uri);
 		let entry = parent.entries.get(basename);
 		if (entry instanceof Directory) {
 			throw vscode.FileSystemError.FileIsADirectory(uri);
@@ -47,55 +46,68 @@ export class MemFS implements vscode.FileSystemProvider, vscode.FileSearchProvid
 		if (!entry) {
 			entry = new File(uri, basename);
 			parent.entries.set(basename, entry);
+			await this.fileStorage.write(parent);
 			this._fireSoon({ type: vscode.FileChangeType.Created, uri });
 		}
 		entry.mtime = Date.now();
 		entry.size = content.byteLength;
 		entry.data = content;
+
+		await this.fileStorage.write(entry);
 		this._fireSoon({ type: vscode.FileChangeType.Changed, uri });
 	}
 	// --- manage files/folders
 	async rename(oldUri: vscode.Uri, newUri: vscode.Uri, options: {
 		overwrite: boolean;
 	}): Promise<void> {
-		if (!options.overwrite && this._lookup(newUri, true)) {
+		if (!options.overwrite && await this._lookup(newUri, true)) {
 			throw vscode.FileSystemError.FileExists(newUri);
 		}
-		let entry = this._lookup(oldUri, false);
-		let oldParent = this._lookupParentDirectory(oldUri);
-		let newParent = this._lookupParentDirectory(newUri);
+		let entry = await this._lookup(oldUri, false);
+		let oldParent = await this._lookupParentDirectory(oldUri);
+		let newParent = await this._lookupParentDirectory(newUri);
+
 		let newName = this._basename(newUri.path);
 		oldParent.entries.delete(entry.name);
 		entry.name = newName;
 		newParent.entries.set(newName, entry);
+		await this.fileStorage.write(entry);
+		await this.fileStorage.write(oldParent);
+		await this.fileStorage.write(newParent);
 		this._fireSoon({ type: vscode.FileChangeType.Deleted, uri: oldUri }, { type: vscode.FileChangeType.Created, uri: newUri });
 	}
 	async delete(uri: vscode.Uri): Promise<void> {
 		let dirname = uri.with({ path: this._dirname(uri.path) });
 		let basename = this._basename(uri.path);
-		let parent = this._lookupAsDirectory(dirname, false);
+		let parent = await this._lookupAsDirectory(dirname, false);
 		if (!parent.entries.has(basename)) {
 			throw vscode.FileSystemError.FileNotFound(uri);
 		}
 		parent.entries.delete(basename);
 		parent.mtime = Date.now();
 		parent.size -= 1;
+		await this.fileStorage.write(parent);
+		await this.fileStorage.delete(uri);
+
 		this._fireSoon({ type: vscode.FileChangeType.Changed, uri: dirname }, { uri, type: vscode.FileChangeType.Deleted });
 	}
 	async createDirectory(uri: vscode.Uri): Promise<void> {
 		let basename = this._basename(uri.path);
 		let dirname = uri.with({ path: this._dirname(uri.path) });
-		let parent = this._lookupAsDirectory(dirname, false);
+		let parent = await this._lookupAsDirectory(dirname, false);
 		let entry = new Directory(uri, basename);
 		parent.entries.set(entry.name, entry);
 		parent.mtime = Date.now();
 		parent.size += 1;
+
+		await this.fileStorage.write(entry);
+		await this.fileStorage.write(parent);
 		this._fireSoon({ type: vscode.FileChangeType.Changed, uri: dirname }, { type: vscode.FileChangeType.Created, uri });
 	}
 	// --- lookup
-	private _lookup(uri: vscode.Uri, silent: false): Entry;
-	private _lookup(uri: vscode.Uri, silent: boolean): Entry | undefined;
-	private _lookup(uri: vscode.Uri, silent: boolean): Entry | undefined {
+	private async _lookup(uri: vscode.Uri, silent: false): Promise<Entry>;
+	private async _lookup(uri: vscode.Uri, silent: boolean): Promise<Entry | undefined>;
+	private async _lookup(uri: vscode.Uri, silent: boolean): Promise<Entry | undefined> {
 		let parts = uri.path.split('/');
 		let entry: Entry = this.root;
 		for (const part of parts) {
@@ -118,23 +130,23 @@ export class MemFS implements vscode.FileSystemProvider, vscode.FileSearchProvid
 		}
 		return entry;
 	}
-	private _lookupAsDirectory(uri: vscode.Uri, silent: boolean): Directory {
-		let entry = this._lookup(uri, silent);
+	private async _lookupAsDirectory(uri: vscode.Uri, silent: boolean): Promise<Directory> {
+		let entry = await this._lookup(uri, silent);
 		if (entry instanceof Directory) {
 			return entry;
 		}
 		throw vscode.FileSystemError.FileNotADirectory(uri);
 	}
-	private _lookupAsFile(uri: vscode.Uri, silent: boolean): File {
-		let entry = this._lookup(uri, silent);
+	private async _lookupAsFile(uri: vscode.Uri, silent: boolean): Promise<File> {
+		let entry = await this._lookup(uri, silent);
 		if (entry instanceof File) {
 			return entry;
 		}
 		throw vscode.FileSystemError.FileIsADirectory(uri);
 	}
-	private _lookupParentDirectory(uri: vscode.Uri): Directory {
+	private async _lookupParentDirectory(uri: vscode.Uri): Promise<Directory> {
 		const dirname = uri.with({ path: this._dirname(uri.path) });
-		return this._lookupAsDirectory(dirname, false);
+		return await this._lookupAsDirectory(dirname, false);
 	}
 	// --- manage file events
 	private _emitter = new vscode.EventEmitter<vscode.FileChangeEvent[]>();
@@ -191,12 +203,12 @@ export class MemFS implements vscode.FileSystemProvider, vscode.FileSearchProvid
 		}
 		return haystack.substring(0, offset);
 	}
-	private _getFiles(): Set<File> {
+	private async _getFiles(): Promise<Set<File>> {
 		const files = new Set<File>();
-		this._doGetFiles(this.root, files);
+		await this._doGetFiles(this.root, files);
 		return files;
 	}
-	private _doGetFiles(dir: Directory, files: Set<File>): void {
+	private async _doGetFiles(dir: Directory, files: Set<File>): Promise<void> {
 		dir.entries.forEach(entry => {
 			if (entry instanceof File) {
 				files.add(entry);
@@ -211,11 +223,11 @@ export class MemFS implements vscode.FileSystemProvider, vscode.FileSearchProvid
 	}
 	// --- search provider
 	// @ts-ignore
-	provideFileSearchResults(query: vscode.FileSearchQuery, _options: vscode.FileSearchOptions, _token: vscode.CancellationToken): vscode.ProviderResult<vscode.Uri[]> {
-		return this._findFiles(query.pattern);
+	async provideFileSearchResults(query: vscode.FileSearchQuery, _options: vscode.FileSearchOptions, _token: vscode.CancellationToken): Promise<vscode.ProviderResult<vscode.Uri[]>> {
+		return await this._findFiles(query.pattern);
 	}
-	private _findFiles(query: string | undefined): vscode.Uri[] {
-		const files = this._getFiles();
+	private async _findFiles(query: string | undefined): Promise<vscode.Uri[]> {
+		const files = await this._getFiles();
 		const result: vscode.Uri[] = [];
 		const pattern = query ? new RegExp(this._convertSimple2RegExpPattern(query)) : null;
 		for (const file of files) {
@@ -230,7 +242,7 @@ export class MemFS implements vscode.FileSystemProvider, vscode.FileSearchProvid
 	async provideTextSearchResults(query: vscode.TextSearchQuery, options: vscode.TextSearchOptions, progress: vscode.Progress<vscode.TextSearchResult>, _token: vscode.CancellationToken) {
 		// @ts-ignore
 		const result: vscode.TextSearchComplete = { limitHit: false };
-		const files = this._findFiles(options.includes[0]);
+		const files = await this._findFiles(options.includes[0]);
 		if (files) {
 			for (const file of files) {
 				const content = this._textDecoder.decode(await this.readFile(file));
@@ -255,28 +267,45 @@ export class MemFS implements vscode.FileSystemProvider, vscode.FileSearchProvid
 	}
 }
 
-export class File implements vscode.FileStat {
 
-	type: vscode.FileType;
+export class File implements vscode.FileStat {
+	type: vscode.FileType.File = vscode.FileType.File;
 	ctime: number;
 	mtime: number;
 	size: number;
-
 	name: string;
 	data?: Uint8Array;
 
+	public static fromJSON(serializedFile: SerializedFile): File {
+		const uri = vscode.Uri.parse(serializedFile.uri);
+		const file = new File(uri, serializedFile.name);
+		file.ctime = serializedFile.ctime;
+		file.mtime = serializedFile.mtime;
+		file.size = serializedFile.size;
+		file.data = serializedFile.data;
+		return file;
+	}
+
 	constructor(public uri: vscode.Uri, name: string) {
-		this.type = vscode.FileType.File;
 		this.ctime = Date.now();
 		this.mtime = Date.now();
 		this.size = 0;
 		this.name = name;
 	}
+
+	public toJSON(): SerializedFile {
+		const { uri, ...rest } = this;
+		return {
+			...rest,
+			uri: uri.toString()
+		};
+	}
+
 }
 
 export class Directory implements vscode.FileStat {
+	type: vscode.FileType.Directory = vscode.FileType.Directory;
 
-	type: vscode.FileType;
 	ctime: number;
 	mtime: number;
 	size: number;
@@ -284,15 +313,92 @@ export class Directory implements vscode.FileStat {
 	name: string;
 	entries: Map<string, File | Directory>;
 
+	public static fromJSON(serializedDirectory: SerializedDirectory): Directory {
+		const uri = vscode.Uri.parse(serializedDirectory.uri);
+		const directory = new Directory(uri, serializedDirectory.name);
+		directory.ctime = serializedDirectory.ctime;
+		directory.mtime = serializedDirectory.mtime;
+		directory.size = serializedDirectory.size;
+		const newEntries: Array<[string, File | Directory]> = serializedDirectory.entries.map(([k, v]) => {
+			if (v.type === vscode.FileType.File) {
+				return [k, File.fromJSON(v) ];
+			} else {
+				return [k, Directory.fromJSON(v)];
+			}
+		});
+		directory.entries = new Map(newEntries);
+		return directory;
+	}
+
+
 	constructor(public uri: vscode.Uri, name: string) {
-		this.type = vscode.FileType.Directory;
 		this.ctime = Date.now();
 		this.mtime = Date.now();
 		this.size = 0;
 		this.name = name;
 		this.entries = new Map();
 	}
+
+	toJSON(): SerializedDirectory {
+		const { uri, entries, ...rest } = this;
+
+		const newEntries: Array<[string, SerializedEntry]> = Array.from(entries.entries()).map(([k, e]) => {
+			return [k, e.toJSON()];
+		});
+		return {
+			...rest,
+			uri: uri.toString(),
+			entries: newEntries
+		};
+	}
 }
 
 export type Entry = File | Directory;
 
+export interface SerializedFile extends vscode.FileStat {
+	uri: string; // vscode.Uri.toJSON
+	type: vscode.FileType.File;
+	ctime: number;
+	mtime: number;
+	size: number;
+	name: string;
+	data?: Uint8Array;
+}
+
+export interface SerializedDirectory extends vscode.FileStat {
+	uri: string;  // vscode.Uri.toJSON
+	type: vscode.FileType.Directory;
+	ctime: number;
+	mtime: number;
+	size: number;
+	name: string;
+	entries: Array<[string, SerializedEntry]>;
+}
+
+export type SerializedEntry = SerializedDirectory | SerializedFile;
+
+class FileStorage {
+	private fileStorage = new StorageArea('fs') as {
+		get(key: string): Promise<SerializedEntry>;
+		set(key:string, serialized: SerializedEntry): Promise<void>;
+		delete(key: string): Promise<void>;
+	};
+
+	async read(uri: vscode.Uri): Promise<Entry> {
+		const serializedEntry = await this.fileStorage.get(uri.toString());
+		if (serializedEntry.type === vscode.FileType.File) {
+			return File.fromJSON(serializedEntry);
+		} else {
+			return Directory.fromJSON(serializedEntry);
+		}
+	}
+
+	async write(entry: Entry) {
+		console.log('write', entry.uri.toString(), entry.toJSON());
+		await this.fileStorage.set(entry.uri.toString(), entry.toJSON());
+	}
+
+	async delete(uri: vscode.Uri) {
+		await this.fileStorage.delete(uri.toString());
+	}
+}
