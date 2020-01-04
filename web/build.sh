@@ -3,7 +3,7 @@
 mkdir -p public/static/out public/static-extension
 cp -r ../out/ public/static/out/
 
-for ext in vscode-api-tests theme-defaults
+for ext in web-api theme-defaults
 do
 	cp -r ../extensions/$ext/ public/static-extension/$ext/
 done
