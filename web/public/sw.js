@@ -1,3 +1,5 @@
+const VERSION = 'v1';
+
 self.addEventListener('install', () => {
 	self.skipWaiting();
 });
@@ -10,7 +12,7 @@ self.addEventListener('fetch', event => {
 	// stale while revalidate
 	event.respondWith(
 		Promise.resolve().then(async () => {
-			const cache = await caches.open('v1');
+			const cache = await caches.open(VERSION);
 			const response = await cache.match(event.request);
 			const fetchPromise = fetch(event.request).then(networkResponse => {
 				cache.put(event.request, networkResponse.clone());

@@ -36,8 +36,7 @@ export class MockRuntime {
 	// so that the frontend can match events with breakpoints.
 	private _breakpointId = 1;
 	private _breakAddresses = new Set<string>();
-	constructor(private memfs: MemFS) {
-	}
+	constructor(private memfs: MemFS) {}
 	/**
 	 * Start executing the given program.
 	 */
@@ -50,8 +49,7 @@ export class MockRuntime {
 		if (stopOnEntry) {
 			// we step once
 			this.step(false, this.stopOnEntry);
-		}
-		else {
+		} else {
 			// we just start to run until we hit a breakpoint or an exception
 			this.continue();
 		}
@@ -71,7 +69,10 @@ export class MockRuntime {
 	/**
 	 * Returns a fake 'stacktrace' where every 'stackframe' is a word from the current line.
 	 */
-	public stack(startFrame: number, endFrame: number): {
+	public stack(
+		startFrame: number,
+		endFrame: number
+	): {
 		frames: any[];
 		count: number;
 	} {
@@ -102,8 +103,7 @@ export class MockRuntime {
 					bps.push(i);
 					sawSpace = false;
 				}
-			}
-			else {
+			} else {
 				sawSpace = true;
 			}
 		}
@@ -186,8 +186,7 @@ export class MockRuntime {
 			// no more lines: stop at first line
 			this._currentLine = 0;
 			this.stopOnEntry.fire();
-		}
-		else {
+		} else {
 			for (let ln = this._currentLine + 1; ln < this._sourceLines.length; ln++) {
 				if (this.fireEventsForLine(ln, stepEvent)) {
 					this._currentLine = ln;
@@ -287,5 +286,3 @@ export interface MockOutputEvent {
 	line: number;
 	column: number;
 }
-
-

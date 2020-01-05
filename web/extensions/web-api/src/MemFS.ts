@@ -22,7 +22,7 @@ export class MemFS implements vscode.FileSystemProvider, vscode.FileSearchProvid
 					const restored = Directory.fromJSON(_entry);
 					await this.createDirectory(restored.uri);
 				}
-			} catch(err) {
+			} catch (err) {
 				console.log(err);
 			}
 		}
@@ -48,10 +48,14 @@ export class MemFS implements vscode.FileSystemProvider, vscode.FileSearchProvid
 		}
 		throw vscode.FileSystemError.FileNotFound();
 	}
-	async writeFile(uri: vscode.Uri, content: Uint8Array, options: {
-		create: boolean;
-		overwrite: boolean;
-	}): Promise<void> {
+	async writeFile(
+		uri: vscode.Uri,
+		content: Uint8Array,
+		options: {
+			create: boolean;
+			overwrite: boolean;
+		}
+	): Promise<void> {
 		let basename = this._basename(uri.path);
 		let parent = await this._lookupParentDirectory(uri);
 		let entry = parent.entries.get(basename);
@@ -78,10 +82,14 @@ export class MemFS implements vscode.FileSystemProvider, vscode.FileSearchProvid
 		this._fireSoon({ type: vscode.FileChangeType.Changed, uri });
 	}
 	// --- manage files/folders
-	async rename(oldUri: vscode.Uri, newUri: vscode.Uri, options: {
-		overwrite: boolean;
-	}): Promise<void> {
-		if (!options.overwrite && await this._lookup(newUri, true)) {
+	async rename(
+		oldUri: vscode.Uri,
+		newUri: vscode.Uri,
+		options: {
+			overwrite: boolean;
+		}
+	): Promise<void> {
+		if (!options.overwrite && (await this._lookup(newUri, true))) {
 			throw vscode.FileSystemError.FileExists(newUri);
 		}
 		let entry = await this._lookup(oldUri, false);
@@ -95,7 +103,10 @@ export class MemFS implements vscode.FileSystemProvider, vscode.FileSearchProvid
 		await this.fileStorage.write(entry);
 		await this.fileStorage.write(oldParent);
 		await this.fileStorage.write(newParent);
-		this._fireSoon({ type: vscode.FileChangeType.Deleted, uri: oldUri }, { type: vscode.FileChangeType.Created, uri: newUri });
+		this._fireSoon(
+			{ type: vscode.FileChangeType.Deleted, uri: oldUri },
+			{ type: vscode.FileChangeType.Created, uri: newUri }
+		);
 	}
 	async delete(uri: vscode.Uri): Promise<void> {
 		let dirname = uri.with({ path: this._dirname(uri.path) });
@@ -142,8 +153,7 @@ export class MemFS implements vscode.FileSystemProvider, vscode.FileSearchProvid
 			if (!child) {
 				if (!silent) {
 					throw vscode.FileSystemError.FileNotFound(uri);
-				}
-				else {
+				} else {
 					return undefined;
 				}
 			}
@@ -176,7 +186,7 @@ export class MemFS implements vscode.FileSystemProvider, vscode.FileSearchProvid
 	readonly onDidChangeFile: vscode.Event<vscode.FileChangeEvent[]> = this._emitter.event;
 	watch(_resource: vscode.Uri): vscode.Disposable {
 		// ignore, fires for all changes...
-		return new vscode.Disposable(() => { });
+		return new vscode.Disposable(() => {});
 	}
 	private _fireSoon(...events: vscode.FileChangeEvent[]): void {
 		this._bufferedEvents.push(...events);
@@ -207,11 +217,13 @@ export class MemFS implements vscode.FileSystemProvider, vscode.FileSearchProvid
 		if (!haystack || !needle) {
 			return haystack;
 		}
-		const needleLen = needle.length, haystackLen = haystack.length;
+		const needleLen = needle.length,
+			haystackLen = haystack.length;
 		if (needleLen === 0 || haystackLen === 0) {
 			return haystack;
 		}
-		let offset = haystackLen, idx = -1;
+		let offset = haystackLen,
+			idx = -1;
 		while (true) {
 			idx = haystack.lastIndexOf(needle, offset - 1);
 			if (idx === -1 || idx + needleLen !== offset) {
@@ -233,8 +245,7 @@ export class MemFS implements vscode.FileSystemProvider, vscode.FileSearchProvid
 		dir.entries.forEach(entry => {
 			if (entry instanceof File) {
 				files.add(entry);
-			}
-			else {
+			} else {
 				this._doGetFiles(entry, files);
 			}
 		});
@@ -244,7 +255,13 @@ export class MemFS implements vscode.FileSystemProvider, vscode.FileSearchProvid
 	}
 	// --- search provider
 	// @ts-ignore
-	async provideFileSearchResults(query: vscode.FileSearchQuery, _options: vscode.FileSearchOptions, _token: vscode.CancellationToken): Promise<vscode.ProviderResult<vscode.Uri[]>> {
+	async provideFileSearchResults(
+		// @ts-ignore
+		query: vscode.FileSearchQuery,
+		// @ts-ignore
+		_options: vscode.FileSearchOptions,
+		_token: vscode.CancellationToken
+	): Promise<vscode.ProviderResult<vscode.Uri[]>> {
 		return await this._findFiles(query.pattern);
 	}
 	private async _findFiles(query: string | undefined): Promise<vscode.Uri[]> {
@@ -260,7 +277,15 @@ export class MemFS implements vscode.FileSystemProvider, vscode.FileSearchProvid
 	}
 	private _textDecoder = new TextDecoder();
 	// @ts-ignore
-	async provideTextSearchResults(query: vscode.TextSearchQuery, options: vscode.TextSearchOptions, progress: vscode.Progress<vscode.TextSearchResult>, _token: vscode.CancellationToken) {
+	async provideTextSearchResults(
+		// @ts-ignore
+		query: vscode.TextSearchQuery,
+		// @ts-ignore
+		options: vscode.TextSearchOptions,
+		// @ts-ignore
+		progress: vscode.Progress<vscode.TextSearchResult>,
+		_token: vscode.CancellationToken
+	) {
 		// @ts-ignore
 		const result: vscode.TextSearchComplete = { limitHit: false };
 		const files = await this._findFiles(options.includes[0]);
@@ -274,10 +299,16 @@ export class MemFS implements vscode.FileSystemProvider, vscode.FileSearchProvid
 					if (index !== -1) {
 						progress.report({
 							uri: file,
-							ranges: new vscode.Range(new vscode.Position(i, index), new vscode.Position(i, index + query.pattern.length)),
+							ranges: new vscode.Range(
+								new vscode.Position(i, index),
+								new vscode.Position(i, index + query.pattern.length)
+							),
 							preview: {
 								text: line,
-								matches: new vscode.Range(new vscode.Position(0, index), new vscode.Position(0, index + query.pattern.length))
+								matches: new vscode.Range(
+									new vscode.Position(0, index),
+									new vscode.Position(0, index + query.pattern.length)
+								)
 							}
 						});
 					}
@@ -287,7 +318,6 @@ export class MemFS implements vscode.FileSystemProvider, vscode.FileSearchProvid
 		return result;
 	}
 }
-
 
 export class File implements vscode.FileStat {
 	type: vscode.FileType.File = vscode.FileType.File;
@@ -321,7 +351,6 @@ export class File implements vscode.FileStat {
 			uri: uri.toString()
 		};
 	}
-
 }
 
 export class Directory implements vscode.FileStat {
@@ -342,7 +371,7 @@ export class Directory implements vscode.FileStat {
 		directory.size = serializedDirectory.size;
 		const newEntries: Array<[string, File | Directory]> = serializedDirectory.entries.map(([k, v]) => {
 			if (v.type === vscode.FileType.File) {
-				return [k, File.fromJSON(v) ];
+				return [k, File.fromJSON(v)];
 			} else {
 				return [k, Directory.fromJSON(v)];
 			}
@@ -350,7 +379,6 @@ export class Directory implements vscode.FileStat {
 		directory.entries = new Map(newEntries);
 		return directory;
 	}
-
 
 	constructor(public uri: vscode.Uri, name: string) {
 		this.ctime = Date.now();
@@ -387,7 +415,7 @@ export interface SerializedFile extends vscode.FileStat {
 }
 
 export interface SerializedDirectory extends vscode.FileStat {
-	uri: string;  // vscode.Uri.toJSON
+	uri: string; // vscode.Uri.toJSON
 	type: vscode.FileType.Directory;
 	ctime: number;
 	mtime: number;
@@ -401,7 +429,7 @@ export type SerializedEntry = SerializedDirectory | SerializedFile;
 class FileStorage {
 	fileStorage = new StorageArea('fs') as {
 		get(key: string): Promise<SerializedEntry>;
-		set(key:string, serialized: SerializedEntry): Promise<void>;
+		set(key: string, serialized: SerializedEntry): Promise<void>;
 		delete(key: string): Promise<void>;
 		entries(): any;
 	};
