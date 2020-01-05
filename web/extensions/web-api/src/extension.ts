@@ -3,15 +3,6 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
-//
-// ############################################################################
-//
-//						! USED FOR RUNNING VSCODE OUT OF SOURCES FOR WEB !
-//										! DO NOT REMOVE !
-//
-// ############################################################################
-//
-
 import * as vscode from 'vscode';
 import { MemFS } from './MemFS';
 import { MockRuntime, MockBreakpoint } from './MockRuntime';
@@ -46,7 +37,7 @@ async function enableFs(context: vscode.ExtensionContext): Promise<MemFS> {
 			overwrite: false
 		});
 	} catch (err) {
-		console.error(err);
+		console.warn(err);
 	}
 
 	return memFs;

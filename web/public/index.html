@@ -27,19 +27,19 @@
 	<script>
 		// NOTE: Changes to inline scripts require update of content security policy
 		self.require = {
-			baseUrl: `${window.location.origin}/static/out`,
+			baseUrl: `${window.location.origin}/out`,
 			paths: {
-				'vscode-textmate': `${window.location.origin}/static/remote/web/modules/vscode-textmate/release/main`,
-				'onigasm-umd': `${window.location.origin}/static/remote/web/modules/onigasm-umd/release/main`,
-				xterm: `${window.location.origin}/static/remote/web/modules/xterm/lib/xterm.js`,
-				'xterm-addon-search': `${window.location.origin}/static/remote/web/modules/xterm-addon-search/lib/xterm-addon-search.js`,
-				'xterm-addon-web-links': `${window.location.origin}/static/remote/web/modules/xterm-addon-web-links/lib/xterm-addon-web-links.js`,
-				'xterm-addon-webgl': `${window.location.origin}/static/remote/web/modules/xterm-addon-webgl/lib/xterm-addon-webgl.js`,
-				'semver-umd': `${window.location.origin}/static/remote/web/modules/semver-umd/lib/semver-umd.js`
+				'vscode-textmate': `${window.location.origin}/remote/vscode-textmate/release/main`,
+				'onigasm-umd': `${window.location.origin}/remote/onigasm-umd/release/main`,
+				xterm: `${window.location.origin}/remote/xterm/lib/xterm.js`,
+				'xterm-addon-search': `${window.location.origin}/remote/xterm-addon-search/lib/xterm-addon-search.js`,
+				'xterm-addon-web-links': `${window.location.origin}/remote/xterm-addon-web-links/lib/xterm-addon-web-links.js`,
+				'xterm-addon-webgl': `${window.location.origin}/remote/xterm-addon-webgl/lib/xterm-addon-webgl.js`,
+				'semver-umd': `${window.location.origin}/remote/semver-umd/lib/semver-umd.js`
 			}
 		};
 	</script>
-	<script src="./static/out/vs/loader.js"></script>
+	<script src="/out/vs/loader.js"></script>
 	<script>
 		async function injectExtensionSettings() {
 			const res = await fetch('/extensions.json');
