@@ -1,0 +1,5 @@
+public/static-extension
+public/web-extension
+public/remote
+public/out
+.netlify
