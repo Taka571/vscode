@@ -24,3 +24,5 @@ WEB_API_DIST=public/web-extension/web-api
 mkdir -p $WEB_API_DIST
 cp extensions/web-api/package.json $WEB_API_DIST
 cp -r extensions/web-api/out/ $WEB_API_DIST/out
+
+node gen-extensions.js > public/extensions.json
