@@ -5,6 +5,7 @@
 
 import * as vscode from 'vscode';
 import { WebFS } from './WebFS';
+import { initFirebase } from './firebase';
 
 const SCHEME = 'webfs';
 
@@ -16,12 +17,19 @@ export async function activate(context: vscode.ExtensionContext) {
 }
 
 async function enableFs(context: vscode.ExtensionContext): Promise<WebFS> {
+	console.log('enableFs');
+	await initFirebase();
+	console.log('enableFs init done');
+
 	const webFs = new WebFS();
+	console.log('enableFs new webfs');
+
 	context.subscriptions.push(vscode.workspace.registerFileSystemProvider(SCHEME, webFs, { isCaseSensitive: true }));
 	const initialized = await webFs.exists(vscode.Uri.parse('webfs:/'));
 	if (!initialized) {
-		const textEncoder = new TextEncoder();
+		console.log('enableFs initialize');
 
+		const textEncoder = new TextEncoder();
 		await webFs.createDirectory(vscode.Uri.parse(`webfs:/`));
 		await webFs.writeFile(vscode.Uri.parse(`webfs:/MANUAL.md`), textEncoder.encode(MANUAL), {
 			create: true,

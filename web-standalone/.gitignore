@@ -1,3 +1,5 @@
 public
 .netlify
 assets/extensions.json
+.firebaserc
+firebase-debug.log

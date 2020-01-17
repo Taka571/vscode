@@ -1,3 +1,4 @@
+import { getUid, getDB } from './firebase';
 import * as vscode from 'vscode';
 
 export class WebFS
@@ -7,7 +8,7 @@ export class WebFS
 		vscode.FileSearchProvider,
 		// @ts-ignore
 		vscode.TextSearchProvider {
-	private _fileStorage = new WebStorage();
+	private _backend = new WebStorage();
 	private _emitter = new vscode.EventEmitter<vscode.FileChangeEvent[]>();
 	private _bufferedEvents: vscode.FileChangeEvent[] = [];
 	private _fireSoonHandle?: NodeJS.Timer;
@@ -19,7 +20,10 @@ export class WebFS
 	}
 	async readDirectory(uri: vscode.Uri): Promise<[string, vscode.FileType][]> {
 		const entry = await this._lookupAsDirectory(uri, false);
-		return entry.getEntries();
+		const ret = entry.getEntries();
+		console.log('readdir', ret);
+		debugger;
+		return ret;
 	}
 	async readFile(uri: vscode.Uri): Promise<Uint8Array> {
 		const data = (await this._lookupAsFile(uri, false)).data;
@@ -52,12 +56,12 @@ export class WebFS
 		if (!entry) {
 			entry = new File(uri);
 			parent.addEntry(basename, entry.uri, entry.type);
-			await this._fileStorage.write(parent);
+			await this._backend.write(parent);
 			this._fireSoon({ type: vscode.FileChangeType.Created, uri });
 		}
 		entry.updateContent(content);
 		entry.data = content;
-		await this._fileStorage.write(entry);
+		await this._backend.write(entry);
 		this._fireSoon({ type: vscode.FileChangeType.Changed, uri });
 	}
 	async rename(
@@ -78,9 +82,9 @@ export class WebFS
 		entry.uri = newUri;
 		oldParent.deleteEntry(entry.name);
 		newParent.addEntry(newName, entry.uri, entry.type);
-		await this._fileStorage.write(entry);
-		await this._fileStorage.write(oldParent);
-		await this._fileStorage.write(newParent);
+		await this._backend.write(entry);
+		await this._backend.write(oldParent);
+		await this._backend.write(newParent);
 		this._fireSoon(
 			{ type: vscode.FileChangeType.Deleted, uri: oldUri },
 			{ type: vscode.FileChangeType.Created, uri: newUri }
@@ -94,8 +98,8 @@ export class WebFS
 			throw vscode.FileSystemError.FileNotFound(uri);
 		}
 		parent.deleteEntry(basename);
-		await this._fileStorage.write(parent);
-		await this._fileStorage.delete(uri);
+		await this._backend.write(parent);
+		await this._backend.delete(uri);
 		this._fireSoon({ type: vscode.FileChangeType.Changed, uri: dirname }, { uri, type: vscode.FileChangeType.Deleted });
 	}
 
@@ -104,15 +108,15 @@ export class WebFS
 
 		// on root
 		if (uri.path === '/') {
-			await this._fileStorage.write(entry);
+			await this._backend.write(entry);
 			this._fireSoon({ type: vscode.FileChangeType.Created, uri });
 		} else {
 			uri = this._normalizeDirectoryUri(uri);
 			const dirname = uri.with({ path: _dirname(uri.path) });
 			const parent = await this._lookupAsDirectory(dirname, false);
 			parent.addEntry(entry.name, entry.uri, entry.type);
-			await this._fileStorage.write(parent);
-			await this._fileStorage.write(entry);
+			await this._backend.write(parent);
+			await this._backend.write(entry);
 			this._fireSoon(
 				{ type: vscode.FileChangeType.Changed, uri: dirname },
 				{ type: vscode.FileChangeType.Created, uri }
@@ -147,16 +151,22 @@ export class WebFS
 		_options: vscode.FileSearchOptions,
 		_token: vscode.CancellationToken
 	): Promise<vscode.ProviderResult<vscode.Uri[]>> {
+		const pattern = query ? new RegExp(_convertSimple2RegExpPattern(query.pattern)) : null;
+
 		const result: Array<vscode.Uri> = [];
-		for await (const [key, entry] of this._fileStorage.storage.entries()) {
-			if (entry.type === vscode.FileType.Directory) {
-				continue;
-			}
-			const pattern = query ? new RegExp(_convertSimple2RegExpPattern(query.pattern)) : null;
-			if (!pattern || pattern.exec(entry.name)) {
+		const db = getDB();
+		const snapshot = await db
+			.collection(COLLECTION)
+			.doc(getUid())
+			.collection('fs')
+			.get();
+
+		snapshot.forEach(doc => {
+			const key = _decodeKey(doc.id);
+			if (!pattern || pattern.exec(key)) {
 				result.push(vscode.Uri.parse(key));
 			}
-		}
+		});
 		return result;
 	}
 
@@ -171,10 +181,19 @@ export class WebFS
 	) {
 		// @ts-ignore
 		const result: vscode.TextSearchComplete = { limitHit: false };
+		const db = getDB();
+		const uid = getUid();
+		const snapshot = await db
+			.collection(COLLECTION)
+			.doc(uid)
+			.collection('fs')
+			.get();
 
-		for await (const [key, entry] of this._fileStorage.storage.entries()) {
+		snapshot.forEach(doc => {
+			const key = _decodeKey(doc.id);
+			const entry = doc.data();
 			if (entry.type === vscode.FileType.Directory) {
-				continue;
+				return;
 			}
 			// TODO: See Options
 			const content = this._textDecoder.decode(entry.data);
@@ -199,7 +218,7 @@ export class WebFS
 					});
 				}
 			}
-		}
+		});
 		return result;
 	}
 
@@ -216,7 +235,7 @@ export class WebFS
 			uri = uri.with({ path: '/' });
 		}
 
-		const ret = await this._fileStorage.read(uri);
+		const ret = await this._backend.read(uri);
 
 		// normalize vscode path
 		if (!ret) {
@@ -228,7 +247,7 @@ export class WebFS
 			} else {
 				next = vscode.Uri.parse(str + '/');
 			}
-			await this._fileStorage.read(next);
+			await this._backend.read(next);
 		}
 
 		if (!ret) {
@@ -270,6 +289,8 @@ export class WebFS
 	}
 }
 
+const textEncoder = new TextEncoder();
+const textDecoder = new TextDecoder();
 export class File implements vscode.FileStat {
 	type: vscode.FileType.File = vscode.FileType.File;
 	ctime: number;
@@ -289,7 +310,7 @@ export class File implements vscode.FileStat {
 		const file = new File(uri);
 		file.ctime = serializedFile.ctime;
 		file.mtime = serializedFile.mtime;
-		file.data = serializedFile.data;
+		file.data = textEncoder.encode(serializedFile.data);
 		return file;
 	}
 
@@ -304,9 +325,10 @@ export class File implements vscode.FileStat {
 	}
 
 	public toJSON(): SerializedFile {
-		const { uri, ...rest } = this;
+		const { uri, data, ...rest } = this;
 		return {
 			...rest,
+			data: textDecoder.decode(data),
 			uri: uri.toString()
 		};
 	}
@@ -336,10 +358,11 @@ export class Directory implements vscode.FileStat {
 		const directory = new Directory(uri);
 		directory.ctime = serializedDirectory.ctime;
 		directory.mtime = serializedDirectory.mtime;
-		const newEntries: Array<[string, EntryRef]> = serializedDirectory.entries.map(([k, v]) => {
-			return [k, { uri: vscode.Uri.parse(v.uri), type: v.type }];
+		const newEntries = new Map<string, EntryRef>();
+		Object.entries(serializedDirectory.entries).forEach(([k, v]) => {
+			newEntries.set(k, { uri: vscode.Uri.parse(v.uri), type: v.type });
 		});
-		directory.entries = new Map(newEntries);
+		directory.entries = newEntries;
 		return directory;
 	}
 
@@ -373,17 +396,20 @@ export class Directory implements vscode.FileStat {
 	toJSON(): SerializedDirectory {
 		const { uri, entries, ...rest } = this;
 
-		const newEntries: Array<[string, { uri: string; type: vscode.FileType }]> = Array.from(entries.entries()).map(
-			([k, v]) => {
-				return [
-					k,
-					{
-						uri: v.uri.toString(),
-						type: v.type
-					}
-				];
-			}
-		);
+		const newEntries: {
+			[key: string]: {
+				uri: string;
+				type: vscode.FileType;
+			};
+		} = Array.from(entries.entries()).reduce((acc, [k, v]) => {
+			return {
+				...acc,
+				[k]: {
+					uri: v.uri.toString(),
+					type: v.type
+				}
+			};
+		}, {});
 		return {
 			...rest,
 			uri: uri.toString(),
@@ -399,7 +425,7 @@ export interface SerializedFile extends vscode.FileStat {
 	type: vscode.FileType.File;
 	ctime: number;
 	mtime: number;
-	data: Uint8Array;
+	data: string;
 }
 
 export interface SerializedDirectory extends vscode.FileStat {
@@ -407,33 +433,30 @@ export interface SerializedDirectory extends vscode.FileStat {
 	type: vscode.FileType.Directory;
 	ctime: number;
 	mtime: number;
-	entries: Array<
-		[
-			string,
-			{
-				uri: string;
-				type: vscode.FileType;
-			}
-		]
-	>;
+	entries: {
+		[key: string]: {
+			uri: string;
+			type: vscode.FileType;
+		};
+	};
 }
 
 export type SerializedEntry = SerializedDirectory | SerializedFile;
 
-// @ts-ignore
-import { StorageArea } from 'kv-storage-polyfill';
-// import { StorageArea } from 'std:kv-storage';
-
+const COLLECTION = 'user';
 class WebStorage {
-	storage = new StorageArea('webfs') as {
-		get(key: string): Promise<SerializedEntry | void>;
-		set(key: string, serialized: SerializedEntry): Promise<void>;
-		delete(key: string): Promise<void>;
-		entries(): any; // TODO: expose async iterator
-	};
-
 	async read(uri: vscode.Uri): Promise<Entry | void> {
-		const serializedEntry = await this.storage.get(uri.toString());
+		// console.log('read', uri);
+		const uid = getUid();
+		const db = getDB();
+		const key = _encodeKey(uri.toString());
+		const snapshot = await db
+			.collection(COLLECTION)
+			.doc(uid)
+			.collection('fs')
+			.doc(key)
+			.get();
+		const serializedEntry = snapshot.data() as SerializedEntry;
 		if (!serializedEntry) {
 			return;
 		}
@@ -445,12 +468,39 @@ class WebStorage {
 	}
 
 	async write(entry: Entry) {
-		await this.storage.set(entry.uri.toString(), entry.toJSON());
+		console.log('write', entry.uri);
+		const uid = getUid();
+		const db = getDB();
+		const key = _encodeKey(entry.uri.toString());
+		await db
+			.collection(COLLECTION)
+			.doc(uid)
+			.collection('fs')
+			.doc(key)
+			.set(entry.toJSON());
 	}
 
 	async delete(uri: vscode.Uri) {
-		await this.storage.delete(uri.toString());
+		console.log('delete', uri);
+
+		const uid = getUid();
+		const db = getDB();
+		const key = _encodeKey(uri.toString());
+		await db
+			.collection(COLLECTION)
+			.doc(uid)
+			.collection('fs')
+			.doc(key)
+			.delete();
 	}
+}
+
+function _encodeKey(key: string): string {
+	return btoa(key);
+}
+
+function _decodeKey(key: string): string {
+	return atob(key);
 }
 
 // --- path utils
